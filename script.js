@@ -74,7 +74,7 @@ export function getLyrics(meta, man) {
     const artist = procKeywords(meta.rawArtist);
     if (!title) return;
 
-    console.log(`[ESLyric] Cleaned search terms: title='${title}', artist='${artist}'`);
+    console.log(`[Debug] Cleaned search terms: title='${title}', artist='${artist}'`);
 
     performSearch(title, artist, true)
         .then(searchResults => {
@@ -82,7 +82,7 @@ export function getLyrics(meta, man) {
             if (bestMatch) {
                 return Promise.resolve(bestMatch);
             } else {
-                console.log('[ESLyric] Exact search did not yield a confident match. Trying fuzzy search...');
+                console.log('[Info] Exact search did not yield a confident match. Trying fuzzy search...');
                 return performSearch(title, artist, false).then(fuzzyResults => {
                     return findBestMatch(fuzzyResults, title, artist);
                 });
@@ -90,15 +90,15 @@ export function getLyrics(meta, man) {
         })
         .then(finalBestMatch => {
             if (finalBestMatch) {
-                console.log(`[ESLyric] Found best match: "${finalBestMatch.name} - ${finalBestMatch.artists.map(a=>a.name).join('/')}" (ID: ${finalBestMatch.id})`);
+                console.log(`[Info] Found best match: "${finalBestMatch.name} - ${finalBestMatch.artists.map(a=>a.name).join('/')}" (ID: ${finalBestMatch.id})`);
                 // *** THE KEY CHANGE IS HERE: Pass 'meta' object down ***
                 fetchAndAddLyric(finalBestMatch, man, meta);
             } else {
-                console.log('[ESLyric] No suitable match found after all search attempts.');
+                console.log('[Warn] No suitable match found after all search attempts.');
             }
         })
         .catch(error => {
-            console.log("[ESLyric] An error occurred in the main promise chain: " + error.message);
+            console.log("[Error] An error occurred in the main promise chain: " + error.message);
         });
 
     messageLoop(0);
@@ -176,7 +176,7 @@ function findBestMatch(songs, title, artist) {
  */
 function fetchAndAddLyric(song, man, meta) {
     const lyricUrl = `https://music.163.com/api/song/lyric?os=pc&id=${song.id}&lv=-1&kv=-1&tv=-1`;
-    console.log(`[ESLyric] Fetching lyrics from: ${lyricUrl}`);
+    console.log(`[Debug] Fetching lyrics from: ${lyricUrl}`);
 
     doRequest('GET', lyricUrl, {}, { crypto: 'webapi' })
         .then(body => {
@@ -190,6 +190,7 @@ function fetchAndAddLyric(song, man, meta) {
                 if (hasLrc) {
                     lyricText = lyricObj.lrc.lyric;
                 } else {
+                    console.log("[Warn] No lyric.");
                     return;
                 }
 
@@ -201,7 +202,7 @@ function fetchAndAddLyric(song, man, meta) {
                 originalLyric.lyricText = lyricText;
                 originalLyric.source = "网易云音乐 (原词)";
                 man.addLyric(originalLyric);
-                console.log("[ESLyric] Added original lyric.");
+                console.log("[Debug] Added original lyric.");
 
                 if (hasTlyric) {
                     const combinedLyric = man.createLyric();
@@ -211,10 +212,10 @@ function fetchAndAddLyric(song, man, meta) {
                     combinedLyric.lyricText = lyricText + '\n' + lyricObj.tlyric.lyric;
                     combinedLyric.source = "网易云音乐 (原词+翻译)";
                     man.addLyric(combinedLyric);
-                    console.log("[ESLyric] Added combined (original + translation) lyric.");
+                    console.log("[Debug] Added combined (original + translation) lyric.");
                 }
             } catch (e) {
-                console.log(`[ESLyric] Error parsing or adding lyric for song ID ${song.id}: ${e.message}`);
+                console.log(`[Error] Error parsing or adding lyric for song ID ${song.id}: ${e.message}`);
             }
         });
 }

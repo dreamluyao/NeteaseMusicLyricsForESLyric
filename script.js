@@ -1,10 +1,11 @@
 /*
     Netease Cloud Music Lyric Script for ESLyric
     
-    Version: 0.7.0 (Final Context Fix)
-    Author: ohyeah & cimoc (Refactored by Gemini 2.5)
+    Version: 0.7.1 
+    Original Author: ohyeah & cimoc (Refactored by Gemini 2.5)
 
-    - Final Fix: Uses the original track metadata (meta.rawTitle, meta.rawArtist)
+    - v0.7.1 Fix: Override the 'NMTID' cookie which will cause the search endpoint return irrelevant data
+    - v0.7.0 Fix: Uses the original track metadata (meta.rawTitle, meta.rawArtist)
       when creating the final lyric object. This ensures ESLyric always accepts
       the result, solving cases where API titles (e.g., with "feat.") differ
       from local file tags.
@@ -19,6 +20,7 @@ const doRequest = (method, url, data, options) => {
         let headers = {
             'Referer': 'https://music.163.com/',
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.4147.89 Safari/537.36',
+            'Cookie': 'NMTID='
         };
         let body = '';
 
@@ -56,7 +58,7 @@ const procKeywords = (str) => {
     if (!str) return '';
     let s = str.toLowerCase();
     s = s.replace(/[\'·$&–\[\]\{\}《》「」『』]/g, " ");
-    s = s.replace(/\(.*?\)|（.*?）/g, "");
+    // s = s.replace(/\(.*?\)|（.*?）/g, "");
     s = s.replace(/[-/:-@[-`{-~]+/g, " ");
     s = s.replace(/[\u2014\u2018\u201c\u2026\u3001\u3002\u300a\u300b\u300e\u300f\u3010\u3011\u30fb\uff01\uff08\uff09\uff0c\uff1a\uff1b\uff1f\uff5e\uffe5]+/g, "");
     return s.trim().replace(/\s+/g, ' ');
@@ -65,13 +67,13 @@ const procKeywords = (str) => {
 export function getConfig(cfg)
 {
     cfg.name = "ESLTest";
-    cfg.version = "0.1.3";
+    cfg.version = "0.1.4";
     cfg.author = "dream";
 }
 
 export function getLyrics(meta, man) {
     const title = procKeywords(meta.rawTitle);
-    const artist = procKeywords(meta.rawArtist);
+    const artist = processArtistName(procKeywords(meta.rawArtist));
     if (!title) return;
 
     console.log(`[Debug] Cleaned search terms: title='${title}', artist='${artist}'`);
@@ -84,6 +86,9 @@ export function getLyrics(meta, man) {
             } else {
                 console.log('[Info] Exact search did not yield a confident match. Trying fuzzy search...');
                 return performSearch(title, artist, false).then(fuzzyResults => {
+                    console.log('[Info] --- Candidates ---')
+                    if (fuzzyResults) { console.log(fuzzyResults.map(r => `${r.id}: ${r.artists.map(a=>a.name).join('/')} - ${r.name}`).join('\n')); }
+                    console.log('[Info] ------------------')
                     return findBestMatch(fuzzyResults, title, artist);
                 });
             }
@@ -137,9 +142,10 @@ function findBestMatch(songs, title, artist) {
         const resultTitle = procKeywords(song.name);
 
         if (resultTitle.includes(title)) {
-            score += 100;
-            if (resultTitle === title) score += 50;
+            score += 80;
+            if (resultTitle === title) score += 20;
         } else {
+            console.log(`[Debug] findBestMatch: ${song.id} "${song.name}" scored 0 (title mismatch).`);
             return { song, score: 0 };
         }
 
@@ -155,13 +161,14 @@ function findBestMatch(songs, title, artist) {
             const artistScore = (matchedWords / userArtistWords.length) * 100;
             score += artistScore;
         }
+        console.log(`[Debug] findBestMatch: ${song.id} "${song.name}" scored ${score}.`);
         return { song, score };
     });
 
     scoredSongs.sort((a, b) => b.score - a.score);
     const best = scoredSongs[0];
     
-    if (best.score > 100) {
+    if (best.score > 101) {
         return best.song;
     }
     
@@ -218,4 +225,27 @@ function fetchAndAddLyric(song, man, meta) {
                 console.log(`[Error] Error parsing or adding lyric for song ID ${song.id}: ${e.message}`);
             }
         });
+}
+
+function processArtistName(input) {
+
+  // Check if the artist name contains cv information, e.g. "赤城ユイナ(CV.春日さくら)"
+  // Most of the time Netease uses cv name, not character name
+  const cvRegex = /cv[\s\.。、]?([^)\]}]+)/i;
+  // Check brackets, () or （）
+  let match = input.match(/\(([^)]+)\)/);
+  if (!match) {
+    match = input.match(/（([^)]+)）/);
+  }
+ 
+  if (match) {
+    const bracketContent = match[1];
+    const cvMatch = bracketContent.match(cvRegex);
+    if (cvMatch) {
+      return cvMatch[1].trim();
+    }
+  }
+  
+  // Return original input if not mathcing rules above
+  return input;
 }
